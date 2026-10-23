@@ -146,6 +146,7 @@
     <button id="arrow" title="A">Arrow (A)</button>
     <button id="box" title="B">Box (B)</button>
     <button id="text" title="T">Text (T)</button>
+    <button id="turn" title="R">Turn over (R)</button>
     <button id="undo" title="Ctrl+Z">Undo (Z)</button>
     <button id="del" title="Delete">Delete (Del)</button>
     <button id="fs" title="F">Fullscreen (F)</button>
@@ -194,14 +195,16 @@
     const rel = (c, e) => ({ c: c.id, x: Math.max(0, Math.min(W, e.clientX - c.x)), y: Math.max(0, Math.min(H, e.clientY - c.y)) });
 
     function render() {
+      syncUrl();
       board.querySelectorAll('.card').forEach(e => e.remove());
       for (const c of state.cards) {
         const d = document.createElement('div');
         d.className = 'card' + (c.text ? ' text' : '') + (sel === 'c' + c.id ? ' sel' : '');
         d.dataset.id = c.id;
         d.style.left = c.x + 'px'; d.style.top = c.y + 'px';
-        const img = document.createElement('img'); img.src = c.img; img.alt = c.name;
-        const t = document.createElement('div'); t.className = 'txt'; t.textContent = c.oracle;
+        const face = c.faces[c.f];
+        const img = document.createElement('img'); img.src = face.img; img.alt = face.name;
+        const t = document.createElement('div'); t.className = 'txt'; t.textContent = face.oracle;
         d.append(img, t);
         (c.boxes || []).forEach((b, i) => {
           const e = document.createElement('div');
@@ -436,14 +439,17 @@
         const r = await fetch('https://api.scryfall.com/cards/named?fuzzy=' + encodeURIComponent(name));
         const j = await r.json();
         if (j.object === 'error') throw new Error(j.details);
-        const faces = j.card_faces || [j];
-        const img = (j.image_uris || faces[0].image_uris).normal;
-        const oracle = faces.map(f => `${f.name}  ${f.mana_cost || ''}\n${f.type_line}\n\n${f.oracle_text || ''}` +
-          (f.power ? `\n\n${f.power}/${f.toughness}` : '') + (f.loyalty ? `\n\nLoyalty: ${f.loyalty}` : '')).join('\n\n———\n\n');
+        const raw = j.card_faces || [j];
+        const faces = raw.map(f => ({
+          name: f.name, img: (f.image_uris || j.image_uris).normal,
+          oracle: `${f.name}  ${f.mana_cost || ''}\n${f.type_line}\n\n${f.oracle_text || ''}` +
+            (f.power ? `\n\n${f.power}/${f.toughness}` : '') + (f.loyalty ? `\n\nLoyalty: ${f.loyalty}` : '')
+        }));
+        const q = name.trim().toLowerCase(), f = Math.max(0, faces.findIndex(x => x.name.toLowerCase() === q));
         commit();
         const n = state.cards.length;
         state.cards.push({
-          id: nextId++, name: j.name, img, oracle, text: false, boxes: [],
+          id: nextId++, name: j.name, faces, f, text: false, boxes: [],
           x: 60 + (n % 6) * 40 + Math.random() * 20, y: 60 + (n % 6) * 30 + Math.random() * 20
         });
         msg.textContent = ''; $('name').value = ''; render();
@@ -462,6 +468,13 @@
       }, 200);
     });
 
+    function turn() {
+      const c = sel && sel[0] === 'c' && cardOf(+sel.slice(1));
+      if (!c || c.faces.length < 2) { msg.textContent = 'Select a two-faced card'; return; }
+      commit(); c.f = (c.f + 1) % c.faces.length; render();
+    }
+    $('turn').onclick = turn;
+
     function setMode(m) {
       mode = mode === m ? 'move' : m;
       document.body.className = 'mode-' + mode;
@@ -472,8 +485,24 @@
     $('arrow').onclick = () => setMode('arrow'); $('box').onclick = () => setMode('box'); $('text').onclick = () => setMode('text');
     $('undo').onclick = undo; $('del').onclick = remove;
     $('fs').onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+    let loading = true; // don't rewrite the URL while the initial cards are still loading
+    function syncUrl() {
+      if (loading) return;
+      const p = new URLSearchParams();
+      state.cards.forEach(c => p.append('c', c.faces[c.f].name)); // current face, so reloading shows the same side
+      const url = location.pathname + (state.cards.length ? '?' + p : '');
+      if (url !== location.pathname + location.search) window.history.replaceState(null, '', url); // `history` is the undo stack here
+    }
+
+    (async () => {
+      for (const name of new URLSearchParams(location.search).getAll('c')) await addCard(name);
+      history.length = 0; // loaded cards are not undoable
+      loading = false; syncUrl();
+    })();
+
     addEventListener('keydown', e => {
-      if (e.key === 'z' || e.key === 'Z') { e.preventDefault(); undo(); }
+      if (e.key === 'r') turn();
+      else if (e.key === 'z' || e.key === 'Z') { e.preventDefault(); undo(); }
       else if (e.key === 'a') setMode('arrow');
       else if (e.key === 'b') setMode('box');
       else if (e.key === 't') { e.preventDefault(); setMode('text'); }

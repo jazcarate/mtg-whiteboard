@@ -18,6 +18,7 @@ Purpose: a white, fullscreen-friendly whiteboard for presenting Magic: The Gathe
 | `A` | Arrow mode: drag from a spot on a card to a spot on a card |
 | `B` | Box mode: drag a highlight rectangle on a card |
 | `T` | Text mode: click to create a note (anchored if clicked on a card) |
+| `R` | Turn over the selected two-faced card (updates the URL) |
 | `Z` | Undo (plain `Z`, not Ctrl/Cmd) |
 | `Del`/`Backspace` | Delete selection |
 | `F` | Fullscreen |
@@ -33,6 +34,11 @@ Move mode (default): drag cards/notes; click an arrow to select it, then drag it
 - Selection `sel` is a string: `c<id>`, `a<index>`, `b<cardId>:<index>`, `n<id>`.
 - Pointer handling is in one `pointerdown`/`pointermove`/`pointerup` set on `#board`, dispatching on `drag.type` (`move`, `arrow`, `box`, `handle`, `note`, `text`). The SVG overlay has `pointer-events: none`; arrows are hit-tested geometrically (`arrowAt`).
 - Note editing uses `contenteditable`; the `blur` handler commits the text and pushes undo history. Note keydown stops propagation so global shortcuts don't fire while typing.
+
+## URL sharing and two-faced cards
+
+- The URL is the only persistence: `?c=<name>&c=<name>` lists the cards (names only; no positions, arrows, notes, or boxes). `syncUrl()` runs from `render()` via `history.replaceState` (note `history` is the undo stack, so use `window.history`); it is paused while the URL's cards are loading.
+- Cards store `faces: [{name, img, oracle}]` and the current face index `f`. Scryfall returns `card_faces` for double-faced/split cards; each face may have its own `image_uris`. The URL stores the CURRENT face name, and `addCard` picks the face whose name matches the requested name (so `c=Soporific Springs` shows the back of `Sink into Stupor // Soporific Springs`). `R` cycles `f` (undoable). Boxes/arrows stay at their position when turning.
 
 ## Known limitations
 
